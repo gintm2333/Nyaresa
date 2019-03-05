@@ -1,0 +1,397 @@
+---
+title: "StandUp_Chen_Tiandian"
+author: "Tiandian Chen"
+date: "3/4/2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+##Abstract
+The main objective of the project study is to determine the responses changes to various emotional states, such as fatigue, stress, and motivation, by reducing the sitting time during a three-month period. In this article, we only discuss one response variable of EMA survey measures, which is the focus level. The data is formally analyzed through conducting linear regression models to indicate the relationship between focus level and other factors that may have effects on it. To estimate the quality of statistical models, the Akaike information criterion (AIC) is applied. According to our final results, the model with changes in standing time as explanatory variable appears to be the best-fitted one. In addition, We conclude that reducing sitting time does not significantly affect focus level. 
+
+##Introduction
+In the wake of high-speed social progress, an increasing number of office jobs with high salaries is provided for people to keep hasty life rhythm and place themselves in a favorable position in the economic-boom society. However, working in an office environment enforce individuals to sit for a long time during work days, which may cause negative impacts on their health. A recent study claims that prolonged sitting that involves very low energy expenditure is adversely associated with physical health outcomes, including premature mortality, type 2 diabetes, and so forth (David, Bethany, Genevieve, Healy & Neville, 2012). In this research, we are interested in examining whether or not a diminution of workplace sitting in an office can result in any changes in mental health. 
+
+We use statistical charts, such as box-plots and scatterplots, and summary function in R studio to offer an overall understanding of the data set. The statistical technique, linear regression, is chosen to construct our models with multiple possible explanatory variables combinations, where the best model is provided by AIC backward selection method. 
+
+```{r echo=FALSE, results='hide',message=FALSE, warning=FALSE}
+
+library(data.table)
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(stats)
+library(MuMIn)
+library(ggpubr)
+library(RColorBrewer)
+
+# Note that the code for imputation values does not run correctly. 
+# Here we use the original data set after deleting all the missing data.
+
+dat <- read_excel("~/Documents/STAT 450/StandUp/SUPUBC_EMA_Full_Longformat_Dec10.xlsx")
+dat$ID <- as.factor(dat$ID)
+dat$UserID <- as.factor(dat$UserID)
+dat$Condition <- as.factor(dat$Condition)
+dat$GENDER <- as.factor(dat$GENDER)
+dat$OVERWEIGHT <- as.factor(dat$OVERWEIGHT)
+dat$Timepoint <- as.factor(dat$Timepoint)
+dat$Date <- as.Date(dat$Date)
+dat$PromptType <- as.factor(dat$PromptType)
+dat$PromptTime <- as.factor(dat$PromptTime)
+dat$DOW <- as.factor(dat$DOW)
+dat$PositionN <- as.factor(dat$PositionN)
+dat$TaskN <- as.factor(dat$TaskN)
+dat$ThinkingN <- as.factor(dat$ThinkingN)
+
+# add reduction in sitting time
+dat[dat == -999] <- NA
+
+summ_dat_cont <- dat %>%
+  filter(Timepoint != "2") %>%
+  group_by(ID, Condition, GENDER, OVERWEIGHT, Timepoint) %>%
+  arrange(ID,Timepoint) %>%
+  summarize_at(vars(AGE,BMI,ValenceN,ArousalN,FatigueN,ProductN,MotiveN,FocusN,StressN,Work_Sit, Work_Stand, Work_Step),mean, na.rm = TRUE)
+
+diff_row <- function(x){
+  if (length(x) < 2) {
+    return(NA)
+  } 
+  else x[2]-x[1]
+}
+
+sum_row <- function(x){
+  if(length(x) < 2) {
+    return(NA)
+  }
+  else x[2]+x[1]
+}
+
+summ_dat_diff <- summ_dat_cont %>%
+  group_by(ID, Condition, GENDER, OVERWEIGHT, AGE, BMI) %>%
+  arrange(Timepoint) %>%
+  summarize_all(diff_row) %>%
+  select(-Timepoint) %>%
+  filter(is.na(Work_Sit) == FALSE, is.na(Work_Stand) == FALSE, is.na(Work_Step) == FALSE)
+
+sum_row <- function(x){
+  if (length(x) < 2) {
+    return(NA)
+  } 
+  else x[2]+x[1]
+}
+
+summ_dat_cont_2 <- summ_dat_cont %>%
+  group_by(ID,Condition) %>%
+  select(-GENDER,-OVERWEIGHT,-AGE,-BMI) %>%
+  mutate(ValenceN, ValenceN0=if_else(Timepoint==0,ValenceN,0)) %>%
+  mutate(ValenceN, ValenceN1=if_else(Timepoint==1,ValenceN,0)) %>%
+  mutate(ArousalN, ArousalN0=if_else(Timepoint==0,ArousalN,0)) %>%
+  mutate(ArousalN, ArousalN1=if_else(Timepoint==1,ArousalN,0)) %>%
+  mutate(FatigueN, FatigueN0=if_else(Timepoint==0,FatigueN,0)) %>%
+  mutate(FatigueN, FatigueN1=if_else(Timepoint==1,FatigueN,0)) %>%
+  mutate(ProductN, ProductN0=if_else(Timepoint==0,ProductN,0)) %>%
+  mutate(ProductN, ProductN1=if_else(Timepoint==1,ProductN,0)) %>%
+  mutate(MotiveN, MotiveN0=if_else(Timepoint==0,MotiveN,0)) %>%
+  mutate(MotiveN, MotiveN1=if_else(Timepoint==1,MotiveN,0)) %>%
+  mutate(FocusN, FocusN0=if_else(Timepoint==0,FocusN,0)) %>%
+  mutate(FocusN, FocusN1=if_else(Timepoint==1,FocusN,0)) %>%
+  mutate(StressN, StressN0=if_else(Timepoint==0,StressN,0)) %>%
+  mutate(StressN, StressN1=if_else(Timepoint==1,StressN,0)) %>%
+  select(-ValenceN,-ArousalN,-FatigueN,-ProductN,-MotiveN,-FocusN,-StressN) %>%
+  arrange(Timepoint) %>%
+  summarize_all(sum_row) %>%
+  filter(is.na(ValenceN0) == FALSE) %>%
+  select(-Timepoint)
+
+summ_dat_cont_2 <- summ_dat_cont_2[-8,]
+
+# Focus
+summ_dat_focus_diff <- summ_dat_diff %>%
+  select(-ValenceN, -ArousalN, -FatigueN, -ProductN, -MotiveN, -StressN)
+summary(summ_dat_focus_diff)
+
+#treatment group
+summ_dat_focus_diff_treat <- summ_dat_focus_diff %>%
+  filter(Condition == '1')
+
+summ_dat_focus_cont <- summ_dat_cont_2 %>%
+  filter(Condition == '1') %>%
+  select(FocusN0, FocusN1)
+```
+##Results
+
+The experiment was conducted with a two-arm randomized waitlist-controlled trail that contains one intervention group and one control group. The two groups were evaluated over a 6-month period, with data collected at baseline, 3- and 6-months. The experimental measurements included 50 participants’ daily activity levels and their responses to various emotional states using a mobile-delivered ecological momentary assessment (EMA). In this research, we only compared the differences from baseline to 3-months results. 
+
+####Data Description
+
+```{r}
+#boxplot for the summary of survey responses
+boxplot(na.omit(dat[18:25]),main = "Summary of Survey Responses \nper Question (Omit NAs)", cex.axis = 0.9, las = 2)
+```
+
+The above box-plot displays the distribution of emotional measures after deleting all of the missing values, providing a big picture of the overall data collection. Both Arousal and Stress are observed with an outlier, which may require a further discussion on it. Note that for variables Arousal, Fatigue, and Stress, a larger level refers to a lower emotional state. 
+
+```{r echo=FALSE, results='hide',message=FALSE, warning=FALSE}
+dat_0 <- dat %>%
+  filter(dat$Timepoint == "0")
+attach(dat_0)
+dat_0_t <- data.frame(cbind(ValenceN[Condition == "1"], ArousalN[Condition == "1"], FatigueN[Condition == "1"], ProductN[Condition == "1"], MotiveN[Condition == "1"], FocusN[Condition == "1"], StressN[Condition == "1"], Success[Condition == "1"],c(ValenceN[Condition == "2"],rep(NA,563-545)), c(ArousalN[Condition == "2"],rep(NA,563-545)), c(FatigueN[Condition == "2"],rep(NA,563-545)), c(ProductN[Condition == "2"],rep(NA,563-545)), c(MotiveN[Condition == "2"],rep(NA,563-545)), c(FocusN[Condition == "2"],rep(NA,563-545)), c(StressN[Condition == "2"],rep(NA,563-545)), c(Success[Condition == "2"],rep(NA,563-545))))
+colnames(dat_0_t) <- c("Valence1","Arousal1","Fatigue1","Product1","Motive1","Focus1","Stress1","Success1","Valence2","Arousal2","Fatigue2","Product2","Motive2","Focus2","Stress2","Success2")
+myfactor <- rep(rep(c("Valence","Arousal","Fatigue","Product","Motive","Focus","Stress","Success"),each = 563),2)
+mycondition <- rep(c("1","2"),each = (563*8))
+detach(dat_0)
+attach(dat_0_t)
+
+boxplot_data_0 <- data.frame(myfactor, mycondition, c(Valence1,Arousal1,Fatigue1,Product1,Motive1,Focus1,Stress1,Success1,Valence2,Arousal2,Fatigue2,Product2,Motive2,Focus2,Stress2,Success2))
+colnames(boxplot_data_0) <- c("Response","Condition","Value")
+boxplot_data_0[,1] <- as.factor(boxplot_data_0[,1])
+boxplot_data_0[,2] <- as.factor(boxplot_data_0[,2])
+
+#Construct boxplot
+baseline_boxplot <- ggplot(data = boxplot_data_0,aes(x = interaction(Condition,Response), y = Value, color = Response)) + geom_boxplot() + theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1),plot.title = element_text(hjust = 0.5)) + ggtitle("Responses to Survey Questions by \n Treatment Group & Topic at Baseline") + xlab("TreatmentGroup.Topic") + ylab("Response Value")
+detach(dat_0_t)
+
+#Create dataset for boxplot
+dat_3 <- dat %>%
+  filter(dat$Timepoint == "1")
+attach(dat_3)
+dat_3_t <- data.frame(cbind(c(ValenceN[Condition == "1"],rep(NA,539-495)), c(ArousalN[Condition == "1"],rep(NA,539-495)), c(FatigueN[Condition == "1"],rep(NA,539-495)), c(ProductN[Condition == "1"],rep(NA,539-495)), c(MotiveN[Condition == "1"],rep(NA,539-495)), c(FocusN[Condition == "1"],rep(NA,539-495)), c(StressN[Condition == "1"],rep(NA,539-495)), c(Success[Condition == "1"],rep(NA,539-495)),ValenceN[Condition == "2"], ArousalN[Condition == "2"], FatigueN[Condition == "2"], ProductN[Condition == "2"], MotiveN[Condition == "2"], FocusN[Condition == "2"], StressN[Condition == "2"], Success[Condition == "2"]))
+colnames(dat_3_t) <- c("Valence1","Arousal1","Fatigue1","Product1","Motive1","Focus1","Stress1","Success1","Valence2","Arousal2","Fatigue2","Product2","Motive2","Focus2","Stress2","Success2")
+myfactor <- rep(rep(c("Valence","Arousal","Fatigue","Product","Motive","Focus","Stress","Success"),each = 539),2)
+mycondition <- rep(c("1","2"),each = (539*8))
+detach(dat_3)
+attach(dat_3_t)
+
+boxplot_data_3 <- data.frame(myfactor, mycondition, c(Valence1,Arousal1,Fatigue1,Product1,Motive1,Focus1,Stress1,Success1,Valence2,Arousal2,Fatigue2,Product2,Motive2,Focus2,Stress2,Success2))
+colnames(boxplot_data_3) <- c("Response","Condition","Value")
+boxplot_data_3[,1] <- as.factor(boxplot_data_3[,1])
+boxplot_data_3[,2] <- as.factor(boxplot_data_3[,2])
+
+#Construct boxplot
+month3_boxplot <- ggplot(data = boxplot_data_3,aes(x = interaction(Condition,Response), y = Value, color = Response)) + geom_boxplot() + theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1),plot.title = element_text(hjust = 0.5)) + ggtitle("Responses to Survey Questions by \n Treatment Group & Topic at 3-Months") + xlab("TreatmentGroup.Topic") + ylab("Response Value")
+
+baseline_boxplot
+month3_boxplot
+```
+The treatment and control groups' responses to EMA measures at the baseline and the thrid month are shown respectively by the two boxplots. 
+```{r echo=FALSE, results='hide',message=FALSE, warning=FALSE}
+
+# Collect data, replace na with -1
+heatf<-cbind.data.frame(dat$PromptTime,dat$DOW,dat$FocusN)
+colnames(heatf)<-c("PromptTime","DOW","FocusN")
+heatf$FocusN<-replace(heatf$FocusN, is.na(heatf$FocusN), -1)
+
+# Select na
+heatf<-heatf %>%
+  filter(FocusN == -1) %>%
+  select(-FocusN)
+
+# Organize into data frame
+dff<-data.frame(table(heatf))
+
+# Set columns ready for ggplot
+dff$Freq<-as.factor(dff$Freq)
+dff$PromptTime<-as.character(dff$PromptTime) %>% as.numeric()
+dff$DOW<-as.character(dff$DOW) 
+levels(dff$DOW) <- c("Monday","Tuesday","Wednesday", "Thursday", "Friday")
+
+# Add custom palette from RColorBrewer
+colourCount = 25
+getPalette = colorRampPalette(brewer.pal(9, "OrRd"))
+
+# Plot using ggplot2, 15 color scale
+heatFocusplot <- dff %>%
+  ggplot(aes(x=DOW,y=reorder(PromptTime, desc(PromptTime)))) +
+  geom_tile(aes(fill=Freq)) +
+  geom_text(aes(label=Freq)) +
+  scale_fill_manual(values=getPalette(15)) +
+  xlab("Day") +
+  scale_x_discrete(labels = c('Mon','Tues','Wed', 'Thurs', 'Fri')) +
+  ylab("Prompt Time") +
+  ggtitle("Missing Data Sorted Into Day and Prompt Time")
+  
+heatFocusplot
+
+```
+
+The chart shows the frequency for missing data of focus level that sorted into day and prompt time. Note that a lighter color refers to a lower frequency. 
+```{r}
+summary(summ_dat_focus_diff)
+
+ggplot(summ_dat_diff, aes(x = Condition, y = FocusN)) +
+  geom_boxplot() +
+  ggtitle("Boxplot of Focus Level differences by Treatment and Control Group")
+```
+
+The chart summarizes the three-month changes in focus level and activity level of participants in either treatment or control group. As stated in the result, their average sitting and stepping time is reduced, the average standing time is raised, and the mean value of focus level is increased by 0.1256 after three months. The boxplot depicts the focus level differences distribution by treatment group and control group, where condition 1 refers to the treatment group and condition 2 refers to the control group. 
+```{r}
+summary(summ_dat_focus_cont)
+summary(summ_dat_focus_diff_treat)
+```
+
+The first summary illustrates the responses of focus level in the treatment group at baseline (FocusN0) and the third month (FocusN1). The changes in focus state along with the differences in sitting, standing, and stepping time are indicated in the second summary. From the result, we find that in the treatment group, there is a reduction in average sitting time and an improvement of average standing time, while the mean value of focus level is decreasing. 
+
+```{r echo=FALSE, results='hide',message=FALSE, warning=FALSE}
+
+C_plot <- ggplot(summ_dat_cont_2, aes(x = FocusN0, y= FocusN1, color = Condition)) +
+  geom_point() + 
+  labs(x = "Focus Level at t0") +
+  labs(y = "Focus Level at t1") +
+  #xlim(0,10) + ylim(0,10) +
+  geom_abline(slope = 1, intercept = 0, color = "purple") +
+  #geom_polygon(data = datpoly, aes(x=x,y=y), alpha=0.2, fill="green") +
+  #geom_polygon(data = datpoly2, aes(x=x,y=y), alpha=0.2, fill="red")
+  ggtitle("Focus Levels at t1 versus t0")
+
+treatment <- summ_dat_cont_2 %>%
+  filter(Condition == "1") %>%
+  select(-Condition)
+
+control <- summ_dat_cont_2 %>%
+  filter(Condition == "2") %>%
+  select(-Condition)
+
+buildPoly <- function(xr, yr, slope = 1, intercept = 0, above = TRUE){
+  #Assumes ggplot default of expand = c(0.05,0)
+  xrTru <- xr + 0.05*diff(xr)*c(-1,1)
+  yrTru <- yr + 0.05*diff(yr)*c(-1,1)
+  
+  #Find where the line crosses the plot edges
+  yCross <- (yrTru - intercept) / slope
+  xCross <- (slope * xrTru) + intercept
+  
+  #Build polygon by cases
+  if (above & (slope >= 0)){
+    rs <- data.frame(x=-Inf,y=Inf)
+    if (xCross[1] < yrTru[1]){
+      rs <- rbind(rs,c(-Inf,-Inf),c(yCross[1],-Inf))
+    }
+    else{
+      rs <- rbind(rs,c(-Inf,xCross[1]))
+    }
+    if (xCross[2] < yrTru[2]){
+      rs <- rbind(rs,c(Inf,xCross[2]),c(Inf,Inf))
+    }
+    else{
+      rs <- rbind(rs,c(yCross[2],Inf))
+    }
+  }
+  if (!above & (slope >= 0)){
+    rs <- data.frame(x= Inf,y= -Inf)
+    if (xCross[1] > yrTru[1]){
+      rs <- rbind(rs,c(-Inf,-Inf),c(-Inf,xCross[1]))
+    }
+    else{
+      rs <- rbind(rs,c(yCross[1],-Inf))
+    }
+    if (xCross[2] > yrTru[2]){
+      rs <- rbind(rs,c(yCross[2],Inf),c(Inf,Inf))
+    }
+    else{
+      rs <- rbind(rs,c(Inf,xCross[2]))
+    }
+  }
+  if (above & (slope < 0)){
+    rs <- data.frame(x=Inf,y=Inf)
+    if (xCross[1] < yrTru[2]){
+      rs <- rbind(rs,c(-Inf,Inf),c(-Inf,xCross[1]))
+    }
+    else{
+      rs <- rbind(rs,c(yCross[2],Inf))
+    }
+    if (xCross[2] < yrTru[1]){
+      rs <- rbind(rs,c(yCross[1],-Inf),c(Inf,-Inf))
+    }
+    else{
+      rs <- rbind(rs,c(Inf,xCross[2]))
+    }
+  }
+  if (!above & (slope < 0)){
+    rs <- data.frame(x= -Inf,y= -Inf)
+    if (xCross[1] > yrTru[2]){
+      rs <- rbind(rs,c(-Inf,Inf),c(yCross[2],Inf))
+    }
+    else{
+      rs <- rbind(rs,c(-Inf,xCross[1]))
+    }
+    if (xCross[2] > yrTru[1]){
+      rs <- rbind(rs,c(Inf,xCross[2]),c(Inf,-Inf))
+    }
+    else{
+      rs <- rbind(rs,c(yCross[1],-Inf))
+    }
+  }
+  
+  return(rs)
+}
+
+C1 <- buildPoly(range(treatment$FocusN0), range(treatment$FocusN1),
+                slope = 1, intercept = 0, above = TRUE)
+C2 <- buildPoly(range(treatment$FocusN0), range(treatment$FocusN1),
+                slope = 1, intercept = 0, above = FALSE)
+
+C_treatment <- ggplot(treatment, aes(x = FocusN0, y = FocusN1)) +
+  geom_point(color = "#f6776f") + 
+  labs(x = "Focus Level at t0") +
+  labs(y = "Focus Level at t1") +
+  #xlim(0,10) + ylim(0,10) +
+  geom_polygon(data = C1, aes(x = x,y = y), alpha = 0.2, fill = "green") +
+  geom_polygon(data = C2, aes(x = x,y = y), alpha = 0.2, fill = "red") +
+  ggtitle("Focus Levels in Treatment Group")
+
+C3 <- buildPoly(range(control$FocusN0), range(control$FocusN1),
+                slope = 1, intercept = 0, above = TRUE)
+C4 <- buildPoly(range(control$FocusN0), range(control$FocusN1),
+                slope = 1, intercept = 0, above = FALSE)
+
+C_control <- ggplot(control, aes(x = FocusN0, y = FocusN1)) +
+  geom_point(color = "#1fbec3") + 
+  labs(x = "Focus Level at t0") +
+  labs(y = "Focus Level at t1") +
+  #xlim(0,10) + ylim(0,10) +
+  geom_polygon(data = C3, aes(x = x,y = y), alpha = 0.2, fill = "green") +
+  geom_polygon(data = C4, aes(x = x,y = y), alpha = 0.2, fill = "red") +
+  ggtitle("Focus Levels in Control Group")
+
+ggarrange(C_plot, 
+          ggarrange(C_treatment, C_control,
+                    ncol = 2, nrow = 2),
+          nrow = 2)
+```
+The first scatterplot shows the focusability of participants in both groups at t1 and t0, where the treatment group and the control group are distinguished by different colors. The following two scatterplots demonstrate the treatment or control group's focus level performance respectively at t1 versus t0. Note that point in the green area implies that the participant has a positive emotional change from t0 to t1, while the point in the red area refers to a negative emotional change.
+
+####Data Analysis
+
+```{r}
+full <- lm(FocusN ~ Work_Sit + Work_Stand + Work_Step + 
+             Condition + GENDER + AGE + BMI + OVERWEIGHT, 
+           data = summ_dat_diff)
+summary(full)
+step(full, direction = "backward")
+```
+
+A global linear regression model was created with focus level as the response variable and all of the factors that might have effects on the emotional state, including demographic effects and differences in sitting time, standing time, and stepping time while working in an office, as explanatory variables. 
+
+The output shows that the p-values of the test are all greater than a 5% significance level, indicating that the explanatory variables do not affect focus level.
+
+AIC in a stepwise algorithm was applied to determine the best-fitted model that minimized the information loss for our analysis. As a lower AIC value implied a better model, here we chose the model with the lowest AIC value. 
+
+According to the result, Work_Stand that represents the changes in standing time is the only explanatory variable selected to form the model. 
+
+```{r}
+model_focus_pick <- lm(FocusN ~ Work_Stand, data = summ_dat_diff)
+model_focus_pick
+summary(model_focus_pick)
+```
+
+From the linear regression model presented above, we have the equation FocusN = 0.064 + 0.1347 * Work_Stand, which implies that the changes in patterns of focus level are positively correlated with improvement in standing time. However, the effect of Work_Stand variable is found to be not significant at a 5% significance level, and the null hypothesis that the average differences in focus level are the same before and after applying changes in standing time is not rejected. 
+
+##Conclusion and Further Discussions
+
+To analyze if reducing sitting time in a three-month scale can cause a significant change in focusability, multiple linear regression models are conducted. The Akaike information criterion (AIC) is applied to the global model that constructed with the response variable, focus level, as well as all the possible significant explanatory variables, including activity levels and demographic effects, to obtain the model with the highest relative quality. It is found that the model which only takes changes in standing time as the explanatory variable is the most preferred one due to its minimum AIC value. Nevertheless, a large p-value, which is greater than the 5% significance level, indicates that modification in standing time does not have a significant effect on the adjustment of focus state. In other words, we conclude that a reduction in sitting time does not result in changes in responses to focus level.
+
+To acquire a more accurate and persuasive conclusion and a further understanding of the subject, a larger data set with sufficient participants and completed record of measurements is needed. In addition, the missing data is suggested to be filled with a better imputation method instead of removing all of it.  
+
+##Reference
+David, W.D., Bethany, H., Genevieve, N.H., Neville,O.(2012). Too much sitting – A health hazard
